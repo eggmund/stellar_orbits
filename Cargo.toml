@@ -1,0 +1,13 @@
+[package]
+name = "stellar_orbit"
+version = "0.1.0"
+authors = ["josh"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+sdl2 = "0.34.3"
+nalgebra = "0.25.3"
+num = "0.4.0"
+derive-new = "0.5.9"
