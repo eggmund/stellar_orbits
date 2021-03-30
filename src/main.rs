@@ -3,98 +3,143 @@ extern crate derive_new;
 
 #[macro_use]
 pub mod body;
+pub mod star;
 
-use sdl2::pixels::Color;
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
-use std::time::Duration;
+use glutin_window::GlutinWindow as Window;
+use opengl_graphics::{GlGraphics, OpenGL};
+use piston::event_loop::{EventSettings, Events};
+use piston::input::{RenderArgs, RenderEvent, UpdateArgs, UpdateEvent};
+use piston::window::WindowSettings;
 
 use nalgebra::{
-    DimName, Point, VectorN, DefaultAllocator, base::allocator::Allocator, DimNameMul,
+    DimName, DefaultAllocator, base::allocator::Allocator,
 };
+use std::rc::Rc;
+use std::cell::{RefCell, RefMut};
+
 
 use body::Body;
+use star::Star;
+
 
 pub type Float = f64;   // Precision of floats
-
-const GRAV_CONST: Float = 6.67408e-11;
-
-
-pub trait Dimension<D: DimName>: DimName + DimNameMul<D> {}
+pub type Point<D> = nalgebra::Point<Float, D>;
+pub type Vector<D> = nalgebra::VectorN<Float, D>;
 
 
-#[derive(new)]
-pub struct Star<D>
+
+const GRAV_CONST: Float = 0.1; // 6.67408e-11;
+const DT: Float = 1.0/60.0;
+
+
+
+pub struct App<D>
     where
-        D: Dimension<D>,
+        D: DimName,
         DefaultAllocator: Allocator<Float, D>,
 {
-    p: Point<Float, D>,
-    v: VectorN<Float, D>,
-    m: Float,
+    gl: GlGraphics,
+    stars: Rc<RefCell<Vec<Star<D>>>>,
 }
 
-impl<D> Star<D>
+impl<D> App<D>
     where
-        D: Dimension<D>,
+        D: DimName,
         DefaultAllocator: Allocator<Float, D>,
 {
-}
+    fn render(&mut self, args: &RenderArgs) {
+        use graphics::*;
 
-impl<D> Body<D> for Star<D>
-    where
-        D: Dimension<D>,
-        DefaultAllocator: Allocator<Float, D>,
-{
-    default_body_gets!(p, v, m);
-}
+        // Clear screen
+        self.gl.draw(args.viewport(), |c, gl| { clear([0.0; 4], gl) });
 
+        {
+            let stars = self.stars.borrow();
+            
+            for i in 0..stars.len() {
+                let (x, y) = {
+                    let p = stars[i].position();
+                    (p[0] as f64, p[1] as f64)
+                };
 
-fn apply_gravity<D: Dimension<D>>(bodies: Vec<Box<dyn Body<D>>>) {
+                self.gl.draw(args.viewport(), |c, gl| {
+                    let transform = c
+                        .transform
+                        .trans(x, y);
 
-}
+                    ellipse([1.0, 1.0, 1.0, 1.0], [stars[i].radius as f64 * 2.0; 4], transform, gl);
+                });
+            }
+        }
 
-fn update_bodies<D: Dimension<D>>(bodies: Vec<Box<dyn Body<D>>>) {
+    }
+
+    fn update(&mut self, args: &UpdateArgs) {
+        Self::apply_gravity(&mut self.stars.borrow_mut());
+        Self::update_bodies(&mut self.stars.borrow_mut())
+    }
+
+    fn apply_gravity<B: Body<D>>(bodies: &mut Vec<B>) {
+        for i in 0..bodies.len()-1 {
+            for j in i+1..bodies.len() {
+                let force = bodies[i].newtonian_force(&bodies[j]);
+                bodies[i].apply_force(&force, DT);
+                bodies[j].apply_force(&(-force), DT);
+            }
+        }
+    }
+
+    fn update_bodies<B: Body<D>>(bodies: &mut Vec<B>) {
+        for b in bodies.iter_mut() {
+            b.update_position(DT);
+        }
+    }
 
 }
 
 
 pub fn main() {
-    
+    use nalgebra::{Point2, Vector2};
 
+    let mut stars = Rc::new(RefCell::new(vec![
+        Star::new(
+            Point2::new(100.0, 100.0),
+            Vector2::new(10.0, 0.0),
+            5000.0,
+            10.0,
+        ),
+        Star::new(
+            Point2::new(100.0, 150.0),
+            Vector2::new(10.0, 0.0),
+            5000.0,
+            10.0,
+        ),
+    ]));
 
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
- 
-    let window = video_subsystem.window("rust-sdl2 demo", 800, 600)
-        .position_centered()
+    // Change this to OpenGL::V2_1 if not working.
+    let opengl = OpenGL::V3_2;
+
+    // Create an Glutin window.
+    let mut window: Window = WindowSettings::new("Orbits", [800, 600])
+        .graphics_api(opengl)
+        .exit_on_esc(true)
         .build()
         .unwrap();
- 
-    let mut canvas = window.into_canvas().build().unwrap();
- 
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
-    canvas.clear();
-    canvas.present();
 
-    let mut event_pump = sdl_context.event_pump().unwrap();
-    'running: loop {
-        canvas.clear();
+    // Create a new game and run it.
+    let mut app = App {
+        gl: GlGraphics::new(opengl),
+        stars,
+    };
 
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit {..} |
-                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    break 'running
-                },
-                _ => {}
-            }
+    let mut events = Events::new(EventSettings::new());
+    while let Some(e) = events.next(&mut window) {
+        if let Some(args) = e.render_args() {
+            app.render(&args);
         }
-        // The rest of the game loop goes here...
 
-
-
-        canvas.present();
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        if let Some(args) = e.update_args() {
+            app.update(&args);
+        }
     }
 }
