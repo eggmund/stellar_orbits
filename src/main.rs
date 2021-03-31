@@ -10,12 +10,14 @@ use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
 use piston::input::{RenderArgs, RenderEvent, UpdateArgs, UpdateEvent};
 use piston::window::WindowSettings;
+use opengl_graphics::GlyphCache;
 
 use nalgebra::{
     DimName, DefaultAllocator, base::allocator::Allocator,
 };
 use std::rc::Rc;
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
+use std::time::{Instant, Duration};
 
 
 use body::Body;
@@ -39,7 +41,7 @@ pub struct App<D>
         DefaultAllocator: Allocator<Float, D>,
 {
     gl: GlGraphics,
-    stars: Rc<RefCell<Vec<Star<D>>>>,
+    stars: Vec<Star<D>>,
 }
 
 impl<D> App<D>
@@ -47,36 +49,50 @@ impl<D> App<D>
         D: DimName,
         DefaultAllocator: Allocator<Float, D>,
 {
-    fn render(&mut self, args: &RenderArgs) {
+    fn render(&mut self, args: &RenderArgs, text_glyph_cache: &mut GlyphCache, fps: f32) {
         use graphics::*;
 
         // Clear screen
         self.gl.draw(args.viewport(), |_c, gl| { clear([0.0; 4], gl) });
+     
+        for i in 0..self.stars.len() {
+            let (x, y) = {
+                let p = self.stars[i].position();
+                (p[0] as f64, p[1] as f64)
+            };
 
-        {
-            let stars = self.stars.borrow();
-            
-            for i in 0..stars.len() {
-                let (x, y) = {
-                    let p = stars[i].position();
-                    (p[0] as f64, p[1] as f64)
-                };
+            let rad = self.stars[i].radius as f64;
+            self.gl.draw(args.viewport(), |c, gl| {
+                let transform = c
+                    .transform
+                    .trans(x, y);
 
-                self.gl.draw(args.viewport(), |c, gl| {
-                    let transform = c
-                        .transform
-                        .trans(x, y);
-
-                    ellipse([1.0, 1.0, 1.0, 1.0], [stars[i].radius as f64 * 2.0; 4], transform, gl);
-                });
-            }
+                ellipse([1.0, 1.0, 1.0, 1.0], [rad * 2.0; 4], transform, gl);
+            });
         }
 
+        // Draw debug stuff
+        let bodies_count = self.stars.len();
+
+        self.gl.draw(args.viewport(), |c, gl| {
+            let transform = c
+                .transform
+                .trans(10.0, 20.0);
+
+            text(
+                [0.0, 1.0, 0.0, 1.0],
+                12,
+                &format!("{:.1} Bodies: {}", fps, bodies_count),
+                text_glyph_cache,
+                transform,
+                gl,
+            ).unwrap();
+        });
     }
 
     fn update(&mut self, _args: &UpdateArgs) {
-        Self::apply_gravity(&mut self.stars.borrow_mut());
-        Self::update_bodies(&mut self.stars.borrow_mut())
+        Self::apply_gravity(&mut self.stars);
+        Self::update_bodies(&mut self.stars);
     }
 
     fn apply_gravity<B: Body<D>>(bodies: &mut Vec<B>) {
@@ -126,16 +142,28 @@ pub fn main() {
         .build()
         .unwrap();
 
+
+    let mut text_glyph_cache = graphics::glyph_cache::rusttype::GlyphCache::new("assets/UbuntuMono.ttf", (), opengl_graphics::TextureSettings::new()).unwrap();
+
+
     // Create a new game and run it.
     let mut app = App {
         gl: GlGraphics::new(opengl),
-        stars: Rc::new(RefCell::new(stars)),
+        stars,
     };
 
     let mut events = Events::new(EventSettings::new());
+
+    let mut last_frame_inst = Instant::now();
+    let mut dt: f64 = 0.0;
+
     while let Some(e) = events.next(&mut window) {
         if let Some(args) = e.render_args() {
-            app.render(&args);
+            app.render(&args, &mut text_glyph_cache, (1.0/dt) as f32);
+
+            let curr_inst = Instant::now();
+            dt = curr_inst.duration_since(last_frame_inst).as_secs_f64();
+            last_frame_inst = curr_inst;
         }
 
         if let Some(args) = e.update_args() {
