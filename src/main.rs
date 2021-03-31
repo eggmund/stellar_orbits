@@ -51,7 +51,7 @@ impl<D> App<D>
         use graphics::*;
 
         // Clear screen
-        self.gl.draw(args.viewport(), |c, gl| { clear([0.0; 4], gl) });
+        self.gl.draw(args.viewport(), |_c, gl| { clear([0.0; 4], gl) });
 
         {
             let stars = self.stars.borrow();
@@ -74,7 +74,7 @@ impl<D> App<D>
 
     }
 
-    fn update(&mut self, args: &UpdateArgs) {
+    fn update(&mut self, _args: &UpdateArgs) {
         Self::apply_gravity(&mut self.stars.borrow_mut());
         Self::update_bodies(&mut self.stars.borrow_mut())
     }
@@ -101,7 +101,7 @@ impl<D> App<D>
 pub fn main() {
     use nalgebra::{Point2, Vector2};
 
-    let mut stars = Rc::new(RefCell::new(vec![
+    let stars = vec![
         Star::new(
             Point2::new(100.0, 100.0),
             Vector2::new(10.0, 0.0),
@@ -114,7 +114,7 @@ pub fn main() {
             5000.0,
             10.0,
         ),
-    ]));
+    ];
 
     // Change this to OpenGL::V2_1 if not working.
     let opengl = OpenGL::V3_2;
@@ -129,7 +129,7 @@ pub fn main() {
     // Create a new game and run it.
     let mut app = App {
         gl: GlGraphics::new(opengl),
-        stars,
+        stars: Rc::new(RefCell::new(stars)),
     };
 
     let mut events = Events::new(EventSettings::new());

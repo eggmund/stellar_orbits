@@ -3,7 +3,7 @@ use nalgebra::{
     DimName, DefaultAllocator, base::allocator::Allocator,
 };
 use crate::{
-    Float, Vector, Point, GRAV_CONST,
+    Float, Vector, Point,
     body::Body,
 };
 
